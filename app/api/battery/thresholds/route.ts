@@ -1,55 +1,30 @@
-import { exec } from "child_process"
-import { writeFile, readFile } from "fs/promises"
-import { promisify } from "util"
-
-const execAsync = promisify(exec)
-
-async function readThresholdFile(path: string): Promise<number | null> {
-  try {
-    const content = await readFile(path, "utf-8")
-    return Number.parseInt(content.trim())
-  } catch (error) {
-    console.log(`[v0] Could not read threshold file ${path}:`, error)
-    return null
-  }
-}
-
-async function writeThresholdFile(path: string, value: number): Promise<boolean> {
-  try {
-    await writeFile(path, value.toString())
-    return true
-  } catch (error) {
-    console.log(`[v0] Could not write threshold file ${path}:`, error)
-    return false
-  }
-}
-
 export async function GET() {
   try {
-    const batteryPath = "/sys/class/power_supply/BAT0"
+    const apiUrl = process.env.WATTSON_API_URL || "http://localhost:9090"
+    console.log(`[v0] Calling FastAPI backend at: ${apiUrl}/thresholds`)
 
-    const [startThreshold, stopThreshold] = await Promise.all([
-      readThresholdFile(`${batteryPath}/charge_start_threshold`),
-      readThresholdFile(`${batteryPath}/charge_stop_threshold`),
-    ])
+    const response = await fetch(`${apiUrl}/thresholds`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
 
-    const thresholds = {
-      chargeStart: startThreshold,
-      chargeStop: stopThreshold,
-      available: startThreshold !== null || stopThreshold !== null,
-      timestamp: new Date().toISOString(),
+    if (!response.ok) {
+      throw new Error(`FastAPI responded with status: ${response.status}`)
     }
 
-    console.log("[v0] Battery thresholds retrieved:", thresholds)
+    const thresholds = await response.json()
+    console.log("[v0] Battery thresholds from FastAPI:", thresholds)
     return Response.json(thresholds)
   } catch (error) {
-    console.error("[v0] Error reading battery thresholds:", error)
+    console.error("[v0] Error calling FastAPI backend:", error)
     return Response.json({
       chargeStart: null,
       chargeStop: null,
       available: false,
       timestamp: new Date().toISOString(),
-      error: "Could not read threshold files",
+      error: "Could not connect to FastAPI backend - ensure it's running on port 9090",
     })
   }
 }
@@ -57,32 +32,30 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const { chargeStart, chargeStop } = await request.json()
+    const apiUrl = process.env.WATTSON_API_URL || "http://localhost:9090"
+    console.log(`[v0] Updating thresholds via FastAPI at: ${apiUrl}/thresholds`)
 
-    const batteryPath = "/sys/class/power_supply/BAT0"
-    const results = []
-
-    if (chargeStart !== undefined) {
-      const success = await writeThresholdFile(`${batteryPath}/charge_start_threshold`, chargeStart)
-      results.push({ type: "start", value: chargeStart, success })
-    }
-
-    if (chargeStop !== undefined) {
-      const success = await writeThresholdFile(`${batteryPath}/charge_stop_threshold`, chargeStop)
-      results.push({ type: "stop", value: chargeStop, success })
-    }
-
-    console.log("[v0] Battery thresholds updated:", results)
-    return Response.json({
-      success: results.every((r) => r.success),
-      results,
-      timestamp: new Date().toISOString(),
+    const response = await fetch(`${apiUrl}/thresholds`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ chargeStart, chargeStop }),
     })
+
+    if (!response.ok) {
+      throw new Error(`FastAPI responded with status: ${response.status}`)
+    }
+
+    const result = await response.json()
+    console.log("[v0] Thresholds updated via FastAPI:", result)
+    return Response.json(result)
   } catch (error) {
-    console.error("[v0] Error updating battery thresholds:", error)
+    console.error("[v0] Error updating thresholds via FastAPI:", error)
     return Response.json(
       {
         success: false,
-        error: "Could not update threshold files",
+        error: "Could not connect to FastAPI backend - ensure it's running on port 9090",
         timestamp: new Date().toISOString(),
       },
       { status: 500 },
