@@ -6,10 +6,10 @@ const execAsync = promisify(exec)
 
 async function getCpuUsage(): Promise<number> {
   try {
-    const { stdout } = await execAsync(
-      "grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$3+$4+$5)} END {print usage}'",
-    )
-    return Number.parseFloat(stdout.trim()) || 0
+    const { stdout } = await execAsync("top -bn1 | grep 'Cpu(s)' | awk '{print $2}' | sed 's/%us,//'")
+    const usage = Number.parseFloat(stdout.trim()) || 0
+    console.log(`[v0] CPU usage: ${usage}%`) // Added debug logging
+    return usage
   } catch (error) {
     console.log("[v0] Could not get CPU usage:", error)
     return 0
@@ -40,19 +40,24 @@ async function getMemoryUsage(): Promise<{ used: number; total: number; percenta
   }
 }
 
-async function getDiskUsage(): Promise<{ used: number; total: number; percentage: number }> {
+async function getDiskUsage(): Promise<{ used: string; total: string; percentage: number }> {
   try {
     const { stdout } = await execAsync("df -h / | awk 'NR==2 {print $2,$3,$5}' | sed 's/%//'")
-    const [total, used, percentage] = stdout.trim().split(" ")
+    const parts = stdout.trim().split(/\s+/)
+    console.log(`[v0] Disk usage raw output: "${stdout.trim()}"`) // Added debug logging
+
+    const totalStr = parts[0] || "0"
+    const usedStr = parts[1] || "0"
+    const percentage = Number.parseInt(parts[2]) || 0
 
     return {
-      used: Number.parseFloat(used) || 0,
-      total: Number.parseFloat(total) || 0,
-      percentage: Number.parseInt(percentage) || 0,
+      used: usedStr,
+      total: totalStr,
+      percentage: percentage,
     }
   } catch (error) {
     console.log("[v0] Could not get disk usage:", error)
-    return { used: 0, total: 0, percentage: 0 }
+    return { used: "0G", total: "0G", percentage: 0 }
   }
 }
 
